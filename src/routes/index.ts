@@ -2,6 +2,7 @@ import * as express from "express"
 import * as bodyParser from "body-parser"
 import mongoClient from "mongodb"
 import { env } from "process"
+import { isNumber } from "util"
 
 export const register =   (app: express.Application) => {
   const dbUrl = process.env.DATABASE_URL
@@ -9,24 +10,31 @@ export const register =   (app: express.Application) => {
 
   let db : mongoClient.Db;
   mongoClient.connect(envVar.DATABASE_URL)
-    .then (client => {
-    // tslint:disable-next-line:no-console
-    console.log(`Connection to database established`)
-    db = client.db(envVar.DB_NAME)
-    db.listCollections({name: 'recipe_details_view'})
-      .next((err, collumnInfo) => {
-        if (!collumnInfo) {
-          db.createCollection('recipe_details_view', {
-            viewOn: env.RECIPES_COLLECTION,
-            pipeline: [{$project: {'title': 1}}]
-          })
-        }
-      })
-  })
+    .then (async client => {
+      console.log(`Connection to database established`)
+      db = client.db(envVar.DB_NAME)
+
+      let cursor =  db.listCollections({name: 'recipe_details_view'})
+      if (!await cursor.hasNext()) {
+        db.createCollection('recipe_details_view', {
+                  viewOn: env.RECIPES_COLLECTION,
+                  pipeline: [{$project: {'title': 1, "description" : 1,
+                            "difficulty": 1, "imageUri": 1, "servings": 1,
+                            "timeInMinutes": 1}}]
+                })
+      }
+
+      cursor =  db.listCollections({name: 'recipe_instructions_view'})
+      if (!await cursor.hasNext()) {
+        db.createCollection('recipe_instructions_view', {
+                  viewOn: env.RECIPES_COLLECTION,
+                  pipeline: [{$project: {'title': 1, 'ingredients': 1, "instructions": 1}}]
+                })
+      }
+    })
   .catch(error => {
       console.error(error)
-      process.exit(999)
-    })
+  })
 
   app.use(bodyParser.json())
 
@@ -40,11 +48,10 @@ export const register =   (app: express.Application) => {
     }
   })
 
-  app.get(`/recipeDetails/:recipeName`, async (req, res) => {
+  app.get(`/recipeDetails/:recipeName/`, async (req, res) => {
     try {
-       const query = {title: req.params.recipeName}
+      const query = {title: req.params.recipeName}
       const result = await db.collection('recipe_details_view').findOne(query)
-      console.log(result)
       res.send(result)
     } catch (err) {
       console.error(err)
@@ -52,7 +59,29 @@ export const register =   (app: express.Application) => {
     }
   })
 
-  app.post('/recipesInstructions', (req, res) => {
-      res.send('Got a POST request')
+  app.get(`/recipeInstructions/:recipeName/`, async (req, res) => {
+    try {
+      const query = {title: req.params.recipeName}
+      const result = await db.collection('recipe_instructions_view').findOne(query)
+      res.send(result)
+    } catch (err) {
+      console.error(err)
+      res.json( {error: err.message || err })
+    }
+  })
+
+  app.get(`/recipeDetails/from/:from/to/:to/`, async (req, res) => {
+    if (!isNaN(+req.params.from) && !isNaN(+req.params.to)) {
+      db.collection('recipe_details_view').find().toArray()
+      .then( array => {
+        res.send(array.slice(+req.params.from, +req.params.to))
+      })
+      .catch(err => {
+        console.log(err)
+        res.status(500).send()
+      })
+    } else {
+      res.status(400).send("Route parameters must be numbers")
+    }
   })
 }
