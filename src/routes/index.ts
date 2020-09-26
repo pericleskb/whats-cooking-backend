@@ -8,7 +8,7 @@ import mongoose from "mongoose"
 
 export const register =   (app: express.Application) => {
   const envVar = process.env;
-  let dataVersion = 0;
+  let dataVersion = 1;
   let db : mongoClient.Db;
 
   mongoose.connect(envVar.DATABASE_URL, {useNewUrlParser: true})
@@ -30,7 +30,7 @@ export const register =   (app: express.Application) => {
            dataVersion = doc.value.valueOf()
          })
          .catch (err => {
-           console.log("Did not find data version variable. Set to 0")
+           console.log("Did not find data version variable. Set to 1")
          })
       }
 
@@ -38,9 +38,9 @@ export const register =   (app: express.Application) => {
       if (!await cursor.hasNext()) {
         db.createCollection('recipe_details_view', {
                   viewOn: env.RECIPES_COLLECTION,
-                  pipeline: [{$project: {'title': 1, "description" : 1,
+                  pipeline: [{$project: {"title": 1, "description" : 1,
                             "difficulty": 1, "imageUri": 1, "servings": 1,
-                            "timeInMinutes": 1}}]
+                            "timeInMinutes": 1, "dataVersion": 1}}]
                 })
       }
 
@@ -71,8 +71,8 @@ export const register =   (app: express.Application) => {
         console.error("Tried to add recipe with existing title")
         res.json({error: "Recipe name already exists"})
       } else {
-      console.error(err)
-      res.json( {error: err.message || err })
+        console.error(err)
+        res.json( {error: err.message || err })
       }
     })
   })
@@ -98,9 +98,13 @@ export const register =   (app: express.Application) => {
   })
 
   app.get(`/recipeDetails/`, async (req, res) => {
-    db.collection('recipe_details_view').find().toArray()
+    let latestDataVersion = 0;
+    if (!isNaN(+req.headers.latest_data_version)) {
+      latestDataVersion = +req.headers.latest_data_version;
+    }
+    const query = {dataVersion: {$gt: latestDataVersion}}
+    db.collection('recipe_details_view').find(query).toArray()
     .then( array => {
-      res.setHeader("data_version", dataVersion)
       res.send(array)
     })
     .catch(err => {
