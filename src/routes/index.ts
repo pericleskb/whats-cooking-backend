@@ -98,11 +98,18 @@ export const register =   (app: express.Application) => {
   })
 
   app.get(`/recipeDetails/`, async (req, res) => {
-    let latestDataVersion = 0;
-    if (!isNaN(+req.headers.latest_data_version)) {
-      latestDataVersion = +req.headers.latest_data_version;
+    if (req.query.dataVersion === undefined){
+      getRecipeDetails(0, res)
     }
-    const query = {dataVersion: {$gt: latestDataVersion}}
+    else if (isNaN(+req.query.dataVersion)) {
+      res.status(400).send("Route parameter \'dataVersion\' should be a number")
+    } else {
+      getRecipeDetails(+req.query.dataVersion, res)
+    }
+  })
+
+  const getRecipeDetails = (clientDataVersion: number, res: express.Response) => {
+    const query = {dataVersion: {$gt: clientDataVersion}}
     db.collection('recipe_details_view').find(query).toArray()
     .then( array => {
       res.send(array)
@@ -111,7 +118,7 @@ export const register =   (app: express.Application) => {
       console.log(err)
       res.status(500).send()
     })
-  })
+  }
 
   // Getting recipe details in increments
   // app.get(`/recipeDetails/from/:from/to/:to/`, async (req, res) => {
